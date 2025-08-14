@@ -1,0 +1,126 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>全自动相册备份</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-50 min-h-screen">
+  <div class="container mx-auto px-4 py-12">
+    <div class="bg-white rounded-2xl shadow-xl p-8 max-w-md mx-auto">
+      <div class="text-center mb-8">
+        <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto">
+          <svg class="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path>
+          </svg>
+        </div>
+        <h1 class="text-2xl font-bold text-gray-800 mt-4">相册自动备份</h1>
+        <p class="text-gray-600 mt-2">安全可靠的云端存储解决方案</p>
+      </div>
+
+      <div id="authSection">
+        <button id="startBackup" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-3 px-6 rounded-lg transition-all">
+          立即备份全部照片
+        </button>
+        <p class="text-xs text-gray-500 mt-3">点击即授权系统访问您的相册并自动上传</p>
+      </div>
+
+      <div id="progressSection" class="hidden mt-6">
+        <div class="flex justify-between text-sm mb-2">
+          <span class="text-gray-700">备份进度</span>
+          <span id="progressText" class="font-medium">0%</span>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-2">
+          <div id="progressBar" class="bg-blue-500 h-2 rounded-full transition-all" style="width: 0%"></div>
+        </div>
+        <p id="statusText" class="text-sm text-gray-600 mt-3 truncate">准备备份环境...</p>
+        <div id="fileList" class="mt-4 max-h-60 overflow-y-auto"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const supabase = supabase.createClient(
+      'YOUR_SUPABASE_URL',
+      'YOUR_SUPABASE_ANON_KEY'
+    );
+
+    document.getElementById('startBackup').addEventListener('click', async () => {
+      try {
+        // 1. 请求相册访问权限
+        const media = await navigator.mediaDevices.getUserMedia({ 
+          video: false, 
+          audio: false 
+        });
+        
+        // 2. 显示进度界面
+        document.getElementById('authSection').classList.add('hidden');
+        document.getElementById('progressSection').classList.remove('hidden');
+        
+        // 3. 获取所有照片文件
+        const fileHandles = await window.showDirectoryPicker();
+        const photoFiles = await scanDirectory(fileHandles);
+        
+        // 4. 批量上传处理
+        const totalFiles = photoFiles.length;
+        let successCount = 0;
+        
+        for (const file of photoFiles) {
+          const fileName = `${Date.now()}_${file.name}`;
+          updateStatus(`正在上传: ${file.name}`);
+          
+          // 上传到Supabase存储
+          const { error } = await supabase.storage
+            .from('user_photos')
+            .upload(`auto_backup/${fileName}`, file);
+
+          if (!error) {
+            successCount++;
+            updateProgress(successCount / totalFiles * 100);
+            addFileToList(file.name, '✓');
+          } else {
+            addFileToList(file.name, '✗');
+          }
+        }
+        
+        updateStatus(`已完成 ${successCount}/${totalFiles} 文件备份`);
+      } catch (err) {
+        console.error('备份失败:', err);
+        updateStatus(`错误: ${err.message}`);
+      }
+    });
+
+    async function scanDirectory(dirHandle) {
+      const files = [];
+      for await (const entry of dirHandle.values()) {
+        if (entry.kind === 'file' && 
+            ['image/jpeg', 'image/png'].includes(entry.type)) {
+          files.push(await entry.getFile());
+        }
+      }
+      return files;
+    }
+
+    function updateProgress(percent) {
+      document.getElementById('progressBar').style.width = `${percent}%`;
+      document.getElementById('progressText').textContent = `${Math.round(percent)}%`;
+    }
+
+    function updateStatus(text) {
+      document.getElementById('statusText').textContent = text;
+    }
+
+    function addFileToList(name, status) {
+      const div = document.createElement('div');
+      div.className = 'flex justify-between py-1 border-b';
+      div.innerHTML = `
+        <span class="truncate">${name}</span>
+        <span>${status}</span>
+      `;
+      document.getElementById('fileList').appendChild(div);
+    }
+  </script>
+</body>
+</html>
